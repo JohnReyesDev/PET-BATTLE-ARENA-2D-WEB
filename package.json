@@ -1,0 +1,33 @@
+{
+  "name": "pet-battle-arena",
+  "version": "1.0.0",
+  "description": "2D Real-time battle arena game integrated with TikTok Live",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "client": "cd client && npx http-server -p 8080",
+    "dev:all": "concurrently \"npm run dev\" \"npm run client\""
+  },
+  "keywords": [
+    "tiktok",
+    "live",
+    "game",
+    "phaser",
+    "pixijs",
+    "websocket"
+  ],
+  "author": "DEV-GAMES-TOK",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "tiktok-live-connector": "^2.1.1-beta1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.1"
+  }
+}
