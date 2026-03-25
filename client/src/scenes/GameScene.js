@@ -427,7 +427,7 @@ export class GameScene extends Phaser.Scene {
             case 3: x = -30; y = Math.random() * height; break;
         }
 
-        const typeIndex = Math.min(Math.floor(enemyData.difficulty / 2), 3);
+        const typeIndex = Math.min(Math.floor(enemyData.difficulty.health / 2), 3);
         const sprite = this.add.sprite(x, y, `enemy_${typeIndex}`);
         sprite.setScale(0.8 + Math.random() * 0.4);
         sprite.setDepth(5);

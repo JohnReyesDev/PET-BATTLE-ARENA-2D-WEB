@@ -122,7 +122,7 @@ class PetBattleGame extends Phaser.Scene {
         
         // Crear grupos
         this.pets = this.add.group();
-        this.enemies = this.group;
+        this.enemies = this.add.group();
 
         // Partículas ambientales
         this.createAmbientParticles();
@@ -431,7 +431,7 @@ class PetBattleGame extends Phaser.Scene {
             case 3: x = -30; y = Math.random() * height; break;
         }
 
-        const typeIndex = Math.min(Math.floor(waveData.difficulty / 2), 3);
+        const typeIndex = Math.min(Math.floor(waveData.difficulty.health / 2), 3);
         const sprite = this.add.sprite(x, y, `enemy_${typeIndex}`);
         sprite.setScale(0.8 + Math.random() * 0.4);
         sprite.setDepth(5);
