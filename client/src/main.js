@@ -3,132 +3,31 @@
  * Phaser.js + Socket.IO Client
  */
 
-// Configuración del Juego
+import { BootScene } from './scenes/BootScene.js';
+import { GameScene } from './scenes/GameScene.js';
+import { UIScene } from './scenes/UIScene.js';
+
 const CONFIG = {
     serverUrl: window.location.origin,
     gameWidth: 1920,
     gameHeight: 1080,
     physics: {
+        default: 'arcade',
         arcade: {
             debug: false
         }
     }
 };
 
-// Importar escenas
-import { BootScene } from './scenes/BootScene.js';
-import { GameScene } from './scenes/GameScene.js';
-import { UIScene } from './scenes/UIScene.js';
-
-// Conexión Socket.IO
 let socket = null;
-
-// Instancia del juego
 let game = null;
+let demoPetInterval = null;
+let demoLikesInterval = null;
+let demoGiftInterval = null;
+let megaPetCountdownInterval = null;
 
-// Conectar al servidor
-function connectToServer() {
-    return new Promise((resolve, reject) => {
-        socket = io(CONFIG.serverUrl, {
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionAttempts: 10
-        });
-
-        // Eventos de conexión
-        socket.on('connect', () => {
-            console.log('[Socket] Conectado al servidor');
-            updateConnectionStatus(true);
-            resolve(socket);
-        });
-
-        socket.on('disconnect', () => {
-            console.log('[Socket] Desconectado del servidor');
-            updateConnectionStatus(false);
-        });
-
-        socket.on('connect_error', (error) => {
-            console.error('[Socket] Error de conexión:', error);
-            updateConnectionStatus(false);
-            reject(error);
-        });
-
-        // Eventos del juego
-        socket.on('game:init', (state) => {
-            console.log('[Juego] Estado inicial recibido', state);
-            GameState.sync(state);
-        });
-
-        socket.on('game:update', (state) => {
-            GameState.sync(state);
-            updateUI(state);
-        });
-
-        socket.on('pet:added', (pet) => {
-            console.log('[Mascota] Añadida:', pet);
-            GameState.addPet(pet);
-            if (GameScene.instance) {
-                GameScene.instance.spawnPet(pet);
-            }
-        });
-
-        socket.on('pet:removed', (data) => {
-            GameState.removePet(data.id);
-            if (GameScene.instance) {
-                GameScene.instance.removePet(data.id);
-            }
-        });
-
-        socket.on('wave:spawn', (data) => {
-            console.log('[Oleada] Generando:', data);
-            if (GameScene.instance) {
-                GameScene.instance.spawnWave(data);
-            }
-        });
-
-        socket.on('megaPet:activate', (data) => {
-            console.log('[MegaMascota] Activada por:', data.donorName);
-            if (GameScene.instance) {
-                GameScene.instance.activateMegaPet(data);
-            }
-            showMegaPetBanner(data);
-        });
-
-        socket.on('megaPet:deactivate', () => {
-            if (GameScene.instance) {
-                GameScene.instance.deactivateMegaPet();
-            }
-            hideMegaPetBanner();
-        });
-
-        socket.on('pets:upgrade', (data) => {
-            console.log('[Mascotas] Todas mejoradas:', data);
-            if (GameScene.instance) {
-                GameScene.instance.showUpgradeEffect(data);
-            }
-        });
-
-        socket.on('event:follow', (data) => {
-            console.log('[Seguir]', data.username);
-            if (GameScene.instance) {
-                GameScene.instance.showFloatingText(data.username, data.message, 0xff69b4);
-            }
-        });
-
-        socket.on('event:chat', (data) => {
-            console.log('[Chat]', data.username, ':', data.text);
-            if (GameScene.instance) {
-                GameScene.instance.showFloatingText(100, 100, `${data.username}: ${data.text}`, 0x00ffff);
-            }
-        });
-    });
-}
-
-// Gestión del Estado del Juego
 const GameState = {
     pets: new Map(),
-    enemies: new Map(),
     wave: 1,
     likesPerMinute: 0,
     totalLikes: 0,
@@ -139,33 +38,16 @@ const GameState = {
     tiktokUsername: '',
 
     sync(state) {
-        // Sincronizar mascotas
-        const serverPetIds = new Set(state.pets.map(p => p.id));
-        
-        // Eliminar mascotas que ya no existen
+        const serverPetIds = new Set(state.pets.map((p) => p.id));
         for (const [id] of this.pets) {
             if (!serverPetIds.has(id)) {
                 this.pets.delete(id);
             }
         }
-
-        // Actualizar o añadir mascotas
         for (const petData of state.pets) {
             this.pets.set(petData.id, petData);
         }
 
-        // Sincronizar enemigos
-        const serverEnemyIds = new Set(state.enemies.map(e => e.id));
-        for (const [id] of this.enemies) {
-            if (!serverEnemyIds.has(id)) {
-                this.enemies.delete(id);
-            }
-        }
-        for (const enemyData of state.enemies) {
-            this.enemies.set(enemyData.id, enemyData);
-        }
-
-        // Sincronizar otro estado
         this.wave = state.wave;
         this.likesPerMinute = state.likesPerMinute;
         this.totalLikes = state.totalLikes;
@@ -182,59 +64,176 @@ const GameState = {
 
     removePet(id) {
         this.pets.delete(id);
-    },
-
-    getPets() {
-        return Array.from(this.pets.values());
-    },
-
-    getEnemies() {
-        return Array.from(this.enemies.values());
     }
 };
 
-// Actualizaciones de UI
+function connectToServer() {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+
+        socket = io(CONFIG.serverUrl, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 10
+        });
+
+        socket.on('connect', () => {
+            updateConnectionStatus(true);
+            if (!settled) {
+                settled = true;
+                resolve(socket);
+            }
+        });
+
+        socket.on('disconnect', () => {
+            updateConnectionStatus(false);
+        });
+
+        socket.on('connect_error', (error) => {
+            updateConnectionStatus(false);
+            if (!settled) {
+                settled = true;
+                reject(error);
+            }
+        });
+
+        socket.on('game:init', (state) => {
+            GameState.sync(state);
+            syncSceneWithState();
+            updateUI(state);
+        });
+
+        socket.on('game:update', (state) => {
+            GameState.sync(state);
+            syncSceneWithState();
+            updateUI(state);
+        });
+
+        socket.on('pet:added', (pet) => {
+            GameState.addPet(pet);
+            if (GameScene.instance) {
+                GameScene.instance.spawnPet(pet);
+            }
+        });
+
+        socket.on('pet:removed', (data) => {
+            GameState.removePet(data.id);
+            if (GameScene.instance) {
+                GameScene.instance.removePet(data.id);
+            }
+        });
+
+        socket.on('wave:spawn', (data) => {
+            if (GameScene.instance) {
+                GameScene.instance.spawnWave(data);
+            }
+        });
+
+        socket.on('megaPet:activate', (data) => {
+            if (GameScene.instance) {
+                GameScene.instance.activateMegaPet(data);
+            }
+            showMegaPetBanner(data);
+        });
+
+        socket.on('megaPet:deactivate', () => {
+            if (GameScene.instance) {
+                GameScene.instance.deactivateMegaPet();
+            }
+            hideMegaPetBanner();
+        });
+
+        socket.on('pets:upgrade', (data) => {
+            if (GameScene.instance) {
+                GameScene.instance.showUpgradeEffect(data);
+            }
+        });
+
+        socket.on('event:follow', (data) => {
+            if (GameScene.instance) {
+                GameScene.instance.showFloatingText(
+                    260,
+                    160 + (Math.random() * 60),
+                    data.message,
+                    0xff69b4
+                );
+            }
+        });
+
+        socket.on('event:chat', (data) => {
+            if (GameScene.instance) {
+                GameScene.instance.showFloatingText(
+                    320,
+                    220 + (Math.random() * 80),
+                    `${data.username}: ${data.text}`,
+                    0x00ffff
+                );
+            }
+        });
+    });
+}
+
+function syncSceneWithState() {
+    if (!GameScene.instance) return;
+
+    const scene = GameScene.instance;
+    const renderedPetIds = new Set(
+        scene.pets.getChildren()
+            .map((pet) => pet?.petData?.id)
+            .filter(Boolean)
+    );
+
+    for (const pet of GameState.pets.values()) {
+        if (!renderedPetIds.has(pet.id)) {
+            scene.spawnPet(pet);
+        }
+    }
+
+    for (const renderedPetId of renderedPetIds) {
+        if (!GameState.pets.has(renderedPetId)) {
+            scene.removePet(renderedPetId);
+        }
+    }
+}
+
 function updateUI(state) {
-    // Actualizar número de oleada
     const waveEl = document.getElementById('wave-number');
-    if (waveEl) waveEl.textContent = state.wave;
+    if (waveEl) waveEl.textContent = String(state.wave);
 
-    // Actualizar contador de mascotas
+    const scene = GameScene.instance;
+    const localPetCount = scene ? scene.pets.getChildren().filter((p) => p.active).length : GameState.pets.size;
+    const localEnemyCount = scene ? scene.enemies.getChildren().filter((e) => e.active).length : 0;
+
     const petCountEl = document.getElementById('pet-count');
-    if (petCountEl) petCountEl.textContent = state.pets.length;
+    if (petCountEl) petCountEl.textContent = String(localPetCount);
 
-    // Actualizar contador de enemigos
     const enemyCountEl = document.getElementById('enemy-count');
-    if (enemyCountEl) enemyCountEl.textContent = state.enemies.length;
+    if (enemyCountEl) enemyCountEl.textContent = String(localEnemyCount);
 
-    // Actualizar contador de regalos
     const giftCountEl = document.getElementById('gift-count');
-    if (giftCountEl) giftCountEl.textContent = state.totalGifts;
+    if (giftCountEl) giftCountEl.textContent = String(state.totalGifts);
 
-    // Actualizar mascotas activas
     const activePetsEl = document.getElementById('active-pets');
-    if (activePetsEl) activePetsEl.textContent = state.pets.length;
+    if (activePetsEl) activePetsEl.textContent = String(localPetCount);
 
-    // Actualizar máximo de mascotas
     const maxPetsEl = document.getElementById('max-pets');
-    if (maxPetsEl) maxPetsEl.textContent = state.maxPets;
+    if (maxPetsEl) maxPetsEl.textContent = String(state.maxPets);
 
-    // Actualizar barra de likes (LPM a porcentaje, máximo 200 LPM = 100%)
     const likesFillEl = document.getElementById('likes-fill');
     if (likesFillEl) {
         const percentage = Math.min((state.likesPerMinute / 200) * 100, 100);
-        likesFillEl.style.width = percentage + '%';
+        likesFillEl.style.width = `${percentage}%`;
     }
 
-    // Actualizar valor LPM
     const lpmEl = document.getElementById('lpm-value');
-    if (lpmEl) lpmEl.textContent = state.likesPerMinute;
+    if (lpmEl) lpmEl.textContent = String(state.likesPerMinute);
 }
 
 function updateConnectionStatus(connected) {
     const statusEl = document.getElementById('connection-status');
     if (statusEl) {
-        statusEl.className = 'connection-status ' + (connected ? 'connected' : 'disconnected');
+        statusEl.className = `connection-status ${connected ? 'connected' : 'disconnected'}`;
         statusEl.textContent = connected ? '⚡ Conectado al servidor' : '⚡ Desconectado';
     }
 }
@@ -243,23 +242,27 @@ function showMegaPetBanner(data) {
     const banner = document.getElementById('mega-pet-banner');
     const donor = document.getElementById('mega-pet-donor');
     const timer = document.getElementById('mega-pet-timer');
-    
-    if (banner && donor && timer) {
-        donor.textContent = data.donorName;
-        banner.classList.add('active');
-        
-        // Iniciar cuenta regresiva
-        let remaining = Math.ceil((data.duration || 30000) / 1000);
-        timer.textContent = remaining;
-        
-        const countdown = setInterval(() => {
-            remaining--;
-            timer.textContent = remaining;
-            if (remaining <= 0) {
-                clearInterval(countdown);
-            }
-        }, 1000);
+    if (!banner || !donor || !timer) return;
+
+    donor.textContent = data.donorName;
+    banner.classList.add('active');
+
+    if (megaPetCountdownInterval) {
+        clearInterval(megaPetCountdownInterval);
+        megaPetCountdownInterval = null;
     }
+
+    let remaining = Math.ceil((data.duration || 30000) / 1000);
+    timer.textContent = String(remaining);
+
+    megaPetCountdownInterval = setInterval(() => {
+        remaining -= 1;
+        timer.textContent = String(Math.max(remaining, 0));
+        if (remaining <= 0) {
+            clearInterval(megaPetCountdownInterval);
+            megaPetCountdownInterval = null;
+        }
+    }, 1000);
 }
 
 function hideMegaPetBanner() {
@@ -267,18 +270,58 @@ function hideMegaPetBanner() {
     if (banner) {
         banner.classList.remove('active');
     }
+    if (megaPetCountdownInterval) {
+        clearInterval(megaPetCountdownInterval);
+        megaPetCountdownInterval = null;
+    }
 }
 
-// Inicializar juego (llamado desde HTML después de conexión TikTok)
+function clearDemoLoop() {
+    if (demoPetInterval) clearInterval(demoPetInterval);
+    if (demoLikesInterval) clearInterval(demoLikesInterval);
+    if (demoGiftInterval) clearInterval(demoGiftInterval);
+    demoPetInterval = null;
+    demoLikesInterval = null;
+    demoGiftInterval = null;
+}
+
+function startDemoLoop() {
+    clearDemoLoop();
+    if (!socket) return;
+
+    const petTypes = ['gato', 'perro', 'dragon', 'conejo'];
+
+    demoPetInterval = setInterval(() => {
+        const type = petTypes[Math.floor(Math.random() * petTypes.length)];
+        socket.emit('demo:spawn', {
+            owner: 'demo_user',
+            type
+        });
+    }, 2500);
+
+    demoLikesInterval = setInterval(() => {
+        socket.emit('likes:add', 5 + Math.floor(Math.random() * 20));
+    }, 3000);
+
+    demoGiftInterval = setInterval(() => {
+        if (Math.random() > 0.35) return;
+        socket.emit('gift:send', {
+            username: 'demo_user',
+            giftName: 'Demo Gift',
+            giftCount: 1,
+            diamondCount: 100 + Math.floor(Math.random() * 800)
+        });
+    }, 12000);
+}
+
+window.hydrateSceneFromState = () => {
+    syncSceneWithState();
+};
+
 window.initGame = async function() {
-    console.log('[Juego] Inicializando PET BATTLE ARENA...');
-
     try {
-        // Conectar al servidor Socket.IO
         await connectToServer();
-        console.log('[Socket] Conectado exitosamente');
 
-        // Crear juego Phaser
         game = new Phaser.Game({
             type: Phaser.AUTO,
             width: CONFIG.gameWidth,
@@ -293,21 +336,24 @@ window.initGame = async function() {
             }
         });
 
-        console.log('[Juego] Phaser inicializado');
+        if (window.isDemoMode) {
+            startDemoLoop();
+        }
     } catch (error) {
         console.error('[Juego] Error al inicializar:', error);
         alert('Error al conectar con el servidor. Por favor recarga la página.');
     }
 };
 
-// Manejar cambio de tamaño de ventana
 window.addEventListener('resize', () => {
     if (game) {
         game.scale.refresh();
     }
 });
 
-// Auto-inicializar si ya está conectado a TikTok
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('[App] DOM listo - esperando conexión de TikTok...');
+window.addEventListener('beforeunload', () => {
+    clearDemoLoop();
+    if (socket) {
+        socket.disconnect();
+    }
 });

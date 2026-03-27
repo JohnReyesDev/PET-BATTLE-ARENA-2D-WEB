@@ -44,6 +44,10 @@ export class GameScene extends Phaser.Scene {
         this.lastUpdate = 0;
         this.gameTime = 0;
 
+        if (typeof window.hydrateSceneFromState === 'function') {
+            window.hydrateSceneFromState();
+        }
+
         console.log('[GameScene] Listo');
     }
 
@@ -135,6 +139,7 @@ export class GameScene extends Phaser.Scene {
         this.pets.getChildren().forEach(pet => {
             if (pet.active && pet.alive) {
                 this.updatePetAI(pet, delta);
+                this.updatePetVisuals(pet);
             }
         });
 
@@ -142,6 +147,7 @@ export class GameScene extends Phaser.Scene {
         this.enemies.getChildren().forEach(enemy => {
             if (enemy.active && enemy.alive) {
                 this.updateEnemyAI(enemy, delta);
+                this.updateEnemyVisuals(enemy);
             }
         });
 
@@ -325,6 +331,10 @@ export class GameScene extends Phaser.Scene {
                         duration: 100,
                         yoyo: true
                     });
+
+                    if (enemy.enemyData.hp <= 0) {
+                        this.combatSystem.enemyDeath(enemy);
+                    }
                 }
             }
         });
@@ -343,9 +353,10 @@ export class GameScene extends Phaser.Scene {
         sprite.setScale(petData.scale || 1);
         sprite.setDepth(10);
 
-        // Añadir barra de vida
-        const hpBar = this.add.graphics();
-        hpBar.setDepth(11);
+        const hpBarBg = this.add.graphics();
+        hpBarBg.setDepth(11);
+        const hpBarFill = this.add.graphics();
+        hpBarFill.setDepth(12);
 
         // Almacenar datos de mascota
         sprite.petData = petData;
@@ -376,6 +387,8 @@ export class GameScene extends Phaser.Scene {
         levelText.setOrigin(0.5);
         levelText.setDepth(12);
         sprite.levelText = levelText;
+        sprite.hpBarBg = hpBarBg;
+        sprite.hpBarFill = hpBarFill;
 
         // Cuerpo de física
         this.physics.add.existing(sprite);
@@ -403,6 +416,8 @@ export class GameScene extends Phaser.Scene {
                 // Eliminar texto de nombre
                 if (pet.nameText) pet.nameText.destroy();
                 if (pet.levelText) pet.levelText.destroy();
+                if (pet.hpBarBg) pet.hpBarBg.destroy();
+                if (pet.hpBarFill) pet.hpBarFill.destroy();
                 
                 pet.destroy();
             }
@@ -557,10 +572,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     showFloatingText(x, y, text, color = 0xffffff) {
+        const colorHex = '#' + color.toString(16).padStart(6, '0');
         const floatText = this.add.text(x, y, text, {
             fontSize: '18px',
             fontFamily: 'Arial Black',
-            color: '#ffffff',
+            color: colorHex,
             stroke: '#000000',
             strokeThickness: 3
         });
@@ -590,6 +606,8 @@ export class GameScene extends Phaser.Scene {
         this.time.delayedCall(100, () => {
             enemy.destroy();
         });
+
+        this.waveSystem.onEnemyDeath();
     }
 
     // Llamado cuando la mascota recibe daño
@@ -620,5 +638,46 @@ export class GameScene extends Phaser.Scene {
             duration: 800,
             onComplete: () => dmgText.destroy()
         });
+    }
+
+    updatePetVisuals(pet) {
+        if (!pet.petData) return;
+
+        if (pet.nameText) {
+            pet.nameText.x = pet.x;
+            pet.nameText.y = pet.y - 34;
+        }
+        if (pet.levelText) {
+            pet.levelText.x = pet.x + 24;
+            pet.levelText.y = pet.y - 24;
+        }
+        if (pet.hpBarBg) {
+            pet.hpBarBg.clear();
+            pet.hpBarBg.fillStyle(0x333333, 1);
+            pet.hpBarBg.fillRect(pet.x - 24, pet.y - 26, 48, 5);
+        }
+        if (pet.hpBarFill) {
+            const hpRatio = Phaser.Math.Clamp(pet.petData.hp / pet.petData.maxHp, 0, 1);
+            pet.hpBarFill.clear();
+            pet.hpBarFill.fillStyle(hpRatio > 0.4 ? 0x00ff66 : 0xff4444, 1);
+            pet.hpBarFill.fillRect(pet.x - 23, pet.y - 25, 46 * hpRatio, 3);
+        }
+    }
+
+    updateEnemyVisuals(enemy) {
+        if (!enemy.enemyData) return;
+
+        if (enemy.hpBarBg) {
+            enemy.hpBarBg.clear();
+            enemy.hpBarBg.fillStyle(0x333333, 1);
+            enemy.hpBarBg.fillRect(enemy.x - 25, enemy.y - 25, 50, 6);
+        }
+
+        if (enemy.hpBar) {
+            const hpRatio = Phaser.Math.Clamp(enemy.enemyData.hp / enemy.enemyData.maxHp, 0, 1);
+            enemy.hpBar.clear();
+            enemy.hpBar.fillStyle(hpRatio > 0.4 ? 0x00ff66 : 0xff4444, 1);
+            enemy.hpBar.fillRect(enemy.x - 24, enemy.y - 24, 48 * hpRatio, 4);
+        }
     }
 }

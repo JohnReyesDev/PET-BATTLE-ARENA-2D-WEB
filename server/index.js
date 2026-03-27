@@ -25,6 +25,8 @@ class PetBattleArenaServer {
 
         this.port = process.env.PORT || 3000;
         this.maxPets = parseInt(process.env.MAX_PETS) || 200;
+        this.stateBroadcastIntervalMs = parseInt(process.env.STATE_BROADCAST_INTERVAL_MS) || 250;
+        this.lastStateBroadcastAt = 0;
 
         // Estado del juego
         this.gameState = {
@@ -33,6 +35,7 @@ class PetBattleArenaServer {
             wave: 0,
             waveTimer: 0,
             likesPerMinute: 0,
+            likesCurrentMinute: 0,
             totalLikes: 0,
             totalGifts: 0,
             isMegaPetActive: false,
@@ -43,6 +46,9 @@ class PetBattleArenaServer {
         this.tiktokConnector = null;
         this.tiktokUsername = null;
         this.isTikTokConnected = false;
+        this.isShuttingDown = false;
+        this.waveIntervalRef = null;
+        this.lpmIntervalRef = null;
 
         // Inicializar componentes
         this.eventProcessor = new EventProcessor(this);
@@ -58,6 +64,9 @@ class PetBattleArenaServer {
 
         // Iniciar bucle del juego
         this.startGameLoop();
+
+        // Manejo de apagado
+        this.setupProcessHandlers();
     }
 
     setupMiddleware() {
@@ -135,7 +144,30 @@ class PetBattleArenaServer {
 
             // Manejar generación de mascotas de demostración (para pruebas sin TikTok)
             socket.on('demo:spawn', (data) => {
-                this.eventProcessor.processDemoSpawn(data);
+                this.eventProcessor.processPetSpawn(data || {});
+            });
+
+            socket.on('pet:spawn', (data) => {
+                this.eventProcessor.processPetSpawn(data || {});
+            });
+
+            socket.on('likes:add', (count) => {
+                const likes = Number(count) || 0;
+                if (likes > 0) {
+                    this.eventProcessor.processLikes(likes);
+                }
+            });
+
+            socket.on('gift:send', (data) => {
+                const payload = data || {};
+                this.eventProcessor.processGift({
+                    username: payload.username || 'demo_user',
+                    nickname: payload.username || 'Usuario Demo',
+                    giftName: payload.giftName || 'Demo Gift',
+                    giftCount: Number(payload.giftCount) || 1,
+                    diamondCount: Number(payload.diamondCount) || 1,
+                    isViralGift: Number(payload.diamondCount) >= 3000
+                });
             });
 
             socket.on('disconnect', () => {
@@ -150,10 +182,10 @@ class PetBattleArenaServer {
         
         // Generador de oleadas
         const waveInterval = parseInt(process.env.WAVE_INTERVAL) || 15000;
-        setInterval(() => this.spawnWave(), waveInterval);
+        this.waveIntervalRef = setInterval(() => this.spawnWave(), waveInterval);
 
         // Calculadora de likes por minuto
-        setInterval(() => this.calculateLPM(), 60000);
+        this.lpmIntervalRef = setInterval(() => this.calculateLPM(), 60000);
 
         console.log(`[Servidor] Bucle del juego iniciado - Puerto: ${this.port}`);
     }
@@ -168,9 +200,13 @@ class PetBattleArenaServer {
         }
 
         // Solo transmitir si hay cambios significativos o clientes conectados
-        if (this.io.engine.clientsCount > 0) {
+        const now = Date.now();
+        if (
+            this.io.engine.clientsCount > 0 &&
+            now - this.lastStateBroadcastAt >= this.stateBroadcastIntervalMs
+        ) {
+            this.lastStateBroadcastAt = now;
             const state = this.getGameState();
-            // Optimización: Si el estado es muy grande, podrías enviar solo deltas
             this.io.emit('game:update', state);
         }
     }
@@ -203,8 +239,8 @@ class PetBattleArenaServer {
     }
 
     calculateLPM() {
-        // Reiniciar contador LPM (se actualizará con eventos reales de likes de TikTok)
-        this.gameState.likesPerMinute = Math.floor(Math.random() * 20); // Valor de demostración, real de TikTok
+        this.gameState.likesPerMinute = this.gameState.likesCurrentMinute;
+        this.gameState.likesCurrentMinute = 0;
     }
 
     getGameState() {
@@ -271,6 +307,37 @@ class PetBattleArenaServer {
 ║  Web:  http://localhost:${this.port}                           ║
 ╚═══════════════════════════════════════════════════════════╝
             `);
+        });
+    }
+
+    setupProcessHandlers() {
+        const shutdown = (signal) => {
+            this.shutdown(signal);
+        };
+        process.on('SIGINT', shutdown);
+        process.on('SIGTERM', shutdown);
+    }
+
+    shutdown(signal) {
+        if (this.isShuttingDown) {
+            return;
+        }
+        this.isShuttingDown = true;
+        console.log(`[Servidor] Apagando por ${signal}...`);
+
+        if (this.tickInterval) clearInterval(this.tickInterval);
+        if (this.waveIntervalRef) clearInterval(this.waveIntervalRef);
+        if (this.lpmIntervalRef) clearInterval(this.lpmIntervalRef);
+
+        if (this.tiktokConnector) {
+            this.tiktokConnector.disconnect();
+        }
+
+        this.io.close(() => {
+            this.server.close(() => {
+                console.log('[Servidor] Apagado limpio completado');
+                process.exit(0);
+            });
         });
     }
 }

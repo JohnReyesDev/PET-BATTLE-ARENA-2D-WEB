@@ -123,15 +123,20 @@ class EventProcessor {
     processPetSpawn(data) {
         // Manejar generación de mascotas desde Socket.IO (modo demostración)
         const { owner, type } = data;
-        
-        if (this.petTypes[type]) {
+
+        const petType = this.petTypes[type] ? type : 'gato';
+        if (this.petTypes[petType]) {
             this.spawnPet({
                 owner: owner || 'demo_user',
                 ownerName: owner || 'Usuario Demo',
-                type: type,
-                ...this.petTypes[type]
+                type: petType,
+                ...this.petTypes[petType]
             });
         }
+    }
+
+    processDemoSpawn(data) {
+        this.processPetSpawn(data || {});
     }
 
     spawnPet(config) {
@@ -221,6 +226,7 @@ class EventProcessor {
 
     processLikes(count) {
         this.server.gameState.totalLikes += count;
+        this.server.gameState.likesCurrentMinute += count;
         
         // Cada 50 likes, mejorar todas las mascotas ligeramente
         const likesMod = this.server.gameState.totalLikes % 50;
@@ -228,9 +234,6 @@ class EventProcessor {
             this.upgradeAllPets(1);
             console.log(`[Likes] Mejora de mascotas activada en ${this.server.gameState.totalLikes} likes totales`);
         }
-
-        // Actualizar LPM
-        this.server.gameState.likesPerMinute += count;
     }
 
     processFollow(subscriber) {

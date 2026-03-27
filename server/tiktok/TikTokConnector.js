@@ -11,10 +11,13 @@ class TikTokConnector {
         this.eventProcessor = eventProcessor;
         this.connection = null;
         this.isConnected = false;
+        this.shouldReconnect = true;
+        this.reconnectTimeout = null;
     }
 
     async connect() {
         try {
+            this.shouldReconnect = true;
             console.log(`[TikTok] Conectando al stream en vivo de @${this.username}...`);
 
             this.connection = new WebcastPushConnection(this.username, {
@@ -154,8 +157,12 @@ class TikTokConnector {
     }
 
     async reconnect() {
+        if (!this.shouldReconnect || this.reconnectTimeout) {
+            return;
+        }
         console.log('[TikTok] Intentando reconectar en 10 segundos...');
-        setTimeout(async () => {
+        this.reconnectTimeout = setTimeout(async () => {
+            this.reconnectTimeout = null;
             try {
                 await this.connect();
             } catch (error) {
@@ -167,6 +174,11 @@ class TikTokConnector {
     }
 
     disconnect() {
+        this.shouldReconnect = false;
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
         if (this.connection) {
             this.connection.disconnect();
             this.isConnected = false;

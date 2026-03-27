@@ -131,6 +131,26 @@
             letter-spacing: 2px;
         }
 
+        .demo-btn {
+            width: 100%;
+            padding: 13px;
+            border: 1px solid #3a3a3a;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.08);
+            color: #f0f0f0;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.2s ease;
+            letter-spacing: 1px;
+        }
+
+        .demo-btn:hover {
+            border-color: #00ffff;
+            background: rgba(0, 255, 255, 0.12);
+        }
+
         .connect-btn:hover {
             transform: scale(1.02);
             box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
@@ -475,6 +495,9 @@
             <button class="connect-btn" id="connect-btn" onclick="connectToTikTok()">
                 ▶️ CONECTAR
             </button>
+            <button class="demo-btn" id="demo-btn" onclick="startDemoMode()">
+                🎮 MODO DEMO (SIN TIKTOK)
+            </button>
             
             <div class="spinner" id="spinner"></div>
             <div class="error-msg" id="error-msg"></div>
@@ -557,17 +580,19 @@
     <!-- Load Phaser -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script>document.write('<script src="src/client.js?v=' + Date.now() + '"><\/script>');</script>
+    <script type="module" src="src/main.js"></script>
     
     <script>
         // Connection variables
         let currentUsername = '';
         let isConnected = false;
+        window.isDemoMode = false;
 
         // Connect to TikTok function
         async function connectToTikTok() {
             const usernameInput = document.getElementById('tiktok-username');
             const connectBtn = document.getElementById('connect-btn');
+            const demoBtn = document.getElementById('demo-btn');
             const spinner = document.getElementById('spinner');
             const errorMsg = document.getElementById('error-msg');
             
@@ -580,9 +605,11 @@
 
             // Show loading
             connectBtn.disabled = true;
+            demoBtn.disabled = true;
             connectBtn.textContent = '⏳ Conectando...';
             spinner.style.display = 'block';
             hideError();
+            window.isDemoMode = false;
 
             try {
                 // Connect to server with username
@@ -606,9 +633,19 @@
             } catch (error) {
                 showError(error.message);
                 connectBtn.disabled = false;
+                demoBtn.disabled = false;
                 connectBtn.textContent = '▶️ CONECTAR';
                 spinner.style.display = 'none';
             }
+        }
+
+        function startDemoMode() {
+            const connectBtn = document.getElementById('connect-btn');
+            const demoBtn = document.getElementById('demo-btn');
+            connectBtn.disabled = true;
+            demoBtn.disabled = true;
+            window.isDemoMode = true;
+            startGame('demo');
         }
 
         function showError(message) {
@@ -629,7 +666,8 @@
             document.getElementById('ui-overlay').classList.add('active');
             
             // Update TikTok username display
-            document.getElementById('tiktok-user').textContent = '@' + username;
+            const label = username === 'demo' ? '@modo_demo' : '@' + username;
+            document.getElementById('tiktok-user').textContent = label;
 
             // Store username for later use
             window.tiktokUsername = username;
